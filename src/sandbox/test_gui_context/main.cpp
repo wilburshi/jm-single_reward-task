@@ -132,7 +132,7 @@ struct App : public om::App {
   // int tasktype{ rand()%4}; // indicate the task type and different cue color: 0 no reward; 1 - self; 2 - altruistic; 3 - cooperative; 4  - for training 
 
   // reward amount if both animal get juice for the altruistic task (self small juice, partner large juice)
-  bool doLargeSmallJuice{ true }; // true: do the two juice delievery with the variables as below; and false: only partner animal get juice with the variables set on the GUI
+  bool doLargeSmallJuice{ false }; // true: do the two juice delievery with the variables as below; and false: only partner animal get juice with the variables set on the GUI
   float large_juice_volume{ 0.150f };
   float small_juice_volume{ 0.020f };
   int juice1_delay_time{ 500 }; // from successful pulling to juice delivery (in unit of minisecond)
@@ -646,7 +646,24 @@ void render_gui(App& app) {
       app.whogetjuice = whogetjuice_gui[0];
     };
 
-
+    // GUI for setting of whether both animal gets juice
+    ImGui::Checkbox("Both_animals_get_juice", &app.doLargeSmallJuice);
+    float LargeJuice_gui[1]{ app.large_juice_volume };
+    if (ImGui::InputFloat("large juice volume:", LargeJuice_gui, 0.0f, 0.0f, "%0.3f", enter_flag)) {
+      app.large_juice_volume = LargeJuice_gui[0];
+    };
+    float SmallJuice_gui[1]{ app.small_juice_volume };
+    if (ImGui::InputFloat("amall juice volume:", SmallJuice_gui, 0.0f, 0.0f, "%0.3f", enter_flag)) {
+      app.small_juice_volume = SmallJuice_gui[0];
+    };
+    int firstJuiceDelay_gui[1]{ app.juice1_delay_time };
+    if (ImGui::InputInt("delay for the first (partner) juice (ms):", firstJuiceDelay_gui, 0, 0, enter_flag)) {
+      app.juice1_delay_time = firstJuiceDelay_gui[0];
+    }
+    int secondJuiceDelay_gui[1]{ app.juice2_delay_time };
+    if (ImGui::InputInt("delay for the second (self) juice (ms):", secondJuiceDelay_gui, 0, 0, enter_flag)) {
+      app.juice2_delay_time = secondJuiceDelay_gui[0];
+    };
     
   }
 
