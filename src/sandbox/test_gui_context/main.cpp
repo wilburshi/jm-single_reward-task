@@ -74,6 +74,8 @@ struct SessionInfo {
   int task_type;
   float pulltime_thres;
   double first_pull_time;  // time since the session starts (first pull), same as TrialRecord -  trial_start_time_stamp
+  float large_juice_volume;
+  float small_juice_volume;
 };
 
 struct LeverReadout {
@@ -117,7 +119,7 @@ struct App : public om::App {
   std::string lever2_animal{ "Vermelho" };
   
   
-  std::string experiment_date{ "20250620" };
+  std::string experiment_date{ "20250624_test" };
 
   //std::string trialrecords_name = experiment_date + "_" + lever1_animal + "_" + lever2_animal + "_TrialRecord_1.json" ;
   //std::string bhvdata_name = experiment_date + "_" + lever1_animal + "_" + lever2_animal + "_bhv_data_1.json" ;
@@ -128,6 +130,14 @@ struct App : public om::App {
   int tasktype{ 2 };
   // int tasktype{rand()%2}; // indicate the task type and different cue color: 0 no reward; 1 - self; 2 - altruistic; 3 - cooperative; 4  - for training 
   // int tasktype{ rand()%4}; // indicate the task type and different cue color: 0 no reward; 1 - self; 2 - altruistic; 3 - cooperative; 4  - for training 
+
+  // reward amount if both animal get juice for the altruistic task (self small juice, partner large juice)
+  bool doLargeSmallJuice{ true }; // true: do the two juice delievery with the variables as below; and false: only partner animal get juice with the variables set on the GUI
+  float large_juice_volume{ 0.150f };
+  float small_juice_volume{ 0.020f };
+  int juice1_delay_time{ 500 }; // from successful pulling to juice delivery (in unit of minisecond)
+  int juice2_delay_time{ 1500 }; // from successful pulling to juice delivery (in unit of minisecond)
+
 
 
   float pulledtime_thres{ 1.0f }; // time difference that two animals has to pull the lever 
@@ -340,6 +350,8 @@ json to_json(const SessionInfo& session_info) {
   result["task_type"] = session_info.task_type;
   result["pulltime_thres"] = session_info.pulltime_thres;
   result["first_pull_time"] = session_info.first_pull_time;
+  result["large_reward_volume"] = session_info.large_juice_volume;
+  result["small_reward_volume"] = session_info.small_juice_volume;
   return result;
 }
 
@@ -492,6 +504,8 @@ void shutdown(App& app) {
     session_info.experiment_date = app.experiment_date;
     session_info.task_type = app.tasktype;
     session_info.pulltime_thres = app.pulledtime_thres;
+    session_info.large_juice_volume = app.large_juice_volume;
+    session_info.small_juice_volume = app.small_juice_volume;
     app.session_info.push_back(session_info);
 
     std::string file_path3 = std::string{ OM_DATA_DIR } + "/" + sessioninfo_name;
@@ -882,9 +896,11 @@ void task_update(App& app) {
           else if (app.tasktype == 2) {
             if (i == 0) {
               om::audio::play_buffer_on_channel(app.lever2_animal_largereward_audio_buffer.value(), abs(i - 1), 0.5f);
+              // om::audio::play_buffer_on_channel(app.sucessful_pull_audio_buffer.value(), abs(i - 1), 0.5f);
             }
             else if (i == 1) {
               om::audio::play_buffer_on_channel(app.lever1_animal_largereward_audio_buffer.value(), abs(i - 1), 0.5f);
+              // om::audio::play_buffer_on_channel(app.sucessful_pull_audio_buffer.value(), abs(i - 1), 0.5f);
             }
 
           }
@@ -949,6 +965,8 @@ void task_update(App& app) {
           session_info.task_type = app.tasktype;
           session_info.pulltime_thres = app.pulledtime_thres;
           session_info.first_pull_time = app.trial_start_time_forsave;
+          session_info.large_juice_volume = app.large_juice_volume;
+          session_info.small_juice_volume = app.small_juice_volume;
           app.session_info.push_back(session_info);
         }
 
@@ -1004,19 +1022,42 @@ void task_update(App& app) {
 
         // altruistic condition
         else if (app.tasktype == 2) {
-          auto pump_handle = om::pump::ith_pump(abs(i-1)); // pump id: 0 - pump 1; 1 - pump 2  -WS
-          std::this_thread::sleep_for(std::chrono::milliseconds(app.juice_delay_time));
-          om::pump::run_dispense_program(pump_handle);
-          app.getreward[abs(i - 1)] = true;
-          app.rewarded[abs(i - 1)] = 1;
-          //
-          app.timepoint = elapsed_time(app.trialstart_time, now());
-          app.behavior_event = abs(i-1) + 3; // pump 1 or 2 deliver  
-          BehaviorData time_stamps3{};
-          time_stamps3.trial_number = app.trialnumber;
-          time_stamps3.time_points = app.timepoint;
-          time_stamps3.behavior_events = app.behavior_event;
-          app.behavior_data.push_back(time_stamps3);
+          // only one animal gets juice
+          if (!app.doLargeSmallJuice) {
+            auto pump_handle = om::pump::ith_pump(abs(i - 1)); // pump id: 0 - pump 1; 1 - pump 2  -WS
+            std::this_thread::sleep_for(std::chrono::milliseconds(app.juice_delay_time));
+            om::pump::run_dispense_program(pump_handle);
+            app.getreward[abs(i - 1)] = true;
+            app.rewarded[abs(i - 1)] = 1;
+            //
+            app.timepoint = elapsed_time(app.trialstart_time, now());
+            app.behavior_event = abs(i - 1) + 3; // pump 1 or 2 deliver  
+            BehaviorData time_stamps3{};
+            time_stamps3.trial_number = app.trialnumber;
+            time_stamps3.time_points = app.timepoint;
+            time_stamps3.behavior_events = app.behavior_event;
+            app.behavior_data.push_back(time_stamps3);
+          }
+          // partner animal gets larger juice and self animal gets smaller juice
+          if (app.doLargeSmallJuice) {
+            // juice delivery time       
+            // the aninal who does not pull gets a big reward
+            auto pump_handle2 = om::pump::ith_pump(abs(i - 1)); // pump id: 0 - pump 1; 1 - pump 2  -WS              
+            auto desired_pump_state2 = om::pump::read_desired_pump_state(pump_handle2);
+            desired_pump_state2.volume = app.large_juice_volume;
+            om::pump::set_dispensed_volume(pump_handle2, desired_pump_state2.volume, desired_pump_state2.volume_units);
+            // om::pump::run_dispense_program(pump_handle2);
+            //
+            // the aninal who does not pull gets a big reward
+            auto pump_handle1 = om::pump::ith_pump(abs(i)); // pump id: 0 - pump 1; 1 - pump 2  -WS              
+            auto desired_pump_state1 = om::pump::read_desired_pump_state(pump_handle1);
+            desired_pump_state1.volume = app.small_juice_volume;
+            om::pump::set_dispensed_volume(pump_handle1, desired_pump_state1.volume, desired_pump_state1.volume_units);
+            // om::pump::run_dispense_program(pump_handle1);
+            //
+           
+          }
+
         }
 
         // mutual cooperative condition - but only one animal get the juice!!! (see below)
@@ -1063,9 +1104,9 @@ void task_update(App& app) {
                 //app.behavior_data.push_back(time_stamps4);
               }
             }
-            state = 1;
-            entry = true;
-            break;
+            // state = 1;
+            // entry = true;
+            // break;
           }
           else {
             // old edition
@@ -1134,13 +1175,15 @@ void task_update(App& app) {
               session_info.task_type = app.tasktype;
               session_info.pulltime_thres = app.pulledtime_thres;
               session_info.first_pull_time = app.trial_start_time_forsave;
+              session_info.large_juice_volume = app.large_juice_volume;
+              session_info.small_juice_volume = app.small_juice_volume;
               app.session_info.push_back(session_info);
             }
 
             else {
-              state = 1;
-              entry = true;
-              break;
+              //state = 1;
+              //entry = true;
+              //break;
 
             }
           
@@ -1173,9 +1216,9 @@ void task_update(App& app) {
             app.first_pull_time = now();
           }
           else {
-            state = 1;
-            entry = true;
-            break;
+            //state = 1;
+            //entry = true;
+            //break;
           }
          
 
@@ -1202,6 +1245,9 @@ void task_update(App& app) {
         lever_read.lever_id = i + 1;
         lever_read.pull_or_release = int(pull_res.pulled_lever);
         app.lever_readout.push_back(lever_read);
+
+        state = 1;
+        entry = true;
 
       }
     }
@@ -1307,6 +1353,44 @@ void task_update(App& app) {
     }
 
     case 1: {
+
+      // both animals get juice, but the one who pull get smaller ammount and later
+      if (app.doLargeSmallJuice) {
+        // juice delivery time       
+          // deliver the juice for partner animal
+        std::this_thread::sleep_for(std::chrono::milliseconds(app.juice1_delay_time));
+        auto pump_handle1_1 = om::pump::ith_pump(abs(app.first_pull_id - 1 - 1)); // pump id: 0 - pump 1; 1 - pump 2  -WS 
+        om::pump::run_dispense_program(pump_handle1_1);
+        om::pump::submit_commands();
+        app.getreward[abs(app.first_pull_id - 1 - 1)] = true;
+        app.rewarded[abs(app.first_pull_id - 1 - 1)] = 1;
+        //
+        app.timepoint = elapsed_time(app.trialstart_time, now());
+        app.behavior_event = abs(app.first_pull_id -1 - 1) + 3; // pump 1 or 2 deliver  
+        BehaviorData time_stamps3{};
+        time_stamps3.trial_number = app.trialnumber;
+        time_stamps3.time_points = app.timepoint;
+        time_stamps3.behavior_events = app.behavior_event;
+        app.behavior_data.push_back(time_stamps3);
+
+        // deliver the juice for self animal
+        std::this_thread::sleep_for(std::chrono::milliseconds(app.juice2_delay_time));
+        auto pump_handle2_1 = om::pump::ith_pump(abs(app.first_pull_id  - 1)); // pump id: 0 - pump 1; 1 - pump 2  -WS
+        om::pump::run_dispense_program(pump_handle2_1);
+        om::pump::submit_commands();
+        app.getreward[abs(app.first_pull_id  - 1)] = true;
+        app.rewarded[abs(app.first_pull_id  - 1)] = 1;
+        //
+        app.timepoint = elapsed_time(app.trialstart_time, now());
+        app.behavior_event = abs(app.first_pull_id - 1) + 3; // pump 1 or 2 deliver  
+        BehaviorData time_stamps4{};
+        time_stamps4.trial_number = app.trialnumber;
+        time_stamps4.time_points = app.timepoint;
+        time_stamps4.behavior_events = app.behavior_event;
+        app.behavior_data.push_back(time_stamps4);
+      }
+
+
       state = 2;
       entry = true;
 
