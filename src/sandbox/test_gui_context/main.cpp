@@ -57,6 +57,9 @@ struct TrialRecord {
   float pulltime_thres; // the time window threshold for the cooperation pulling
   int whogetjuice; // indicate which pump works; only meaningful when task type is 3
   int automated_lever_enabled_index;
+  float switchTime;
+  float switchTime_lever1;
+  float switchTime_lever2;
 };
 
 struct BehaviorData {
@@ -115,11 +118,11 @@ struct App : public om::App {
   // Some of these variable can be changed accordingly for each session. - Weikang
 
   // file name
-  std::string lever1_animal{ "Koala" };
-  std::string lever2_animal{ "Vermelho" };
+  std::string lever1_animal{ "Vermelho" };
+  std::string lever2_animal{ "Koala" };
   
   
-  std::string experiment_date{ "20250624_test" };
+  std::string experiment_date{ "20250725_test" };
 
   //std::string trialrecords_name = experiment_date + "_" + lever1_animal + "_" + lever2_animal + "_TrialRecord_1.json" ;
   //std::string bhvdata_name = experiment_date + "_" + lever1_animal + "_" + lever2_animal + "_bhv_data_1.json" ;
@@ -127,16 +130,16 @@ struct App : public om::App {
   //std::string leverread_name = experiment_date + "_" + lever1_animal + "_" + lever2_animal + "_lever_reading_1.json";
 
   // indicate the task type and different cue color: 0 no reward; 1 - self; 2 - altruistic (single pull); 3 -altruistic (both pulls; cooperative pull); 4  - for training
-  int tasktype{ 2 };
+  int tasktype{ 1 };
   // int tasktype{rand()%2}; // indicate the task type and different cue color: 0 no reward; 1 - self; 2 - altruistic; 3 - cooperative; 4  - for training 
   // int tasktype{ rand()%4}; // indicate the task type and different cue color: 0 no reward; 1 - self; 2 - altruistic; 3 - cooperative; 4  - for training 
 
   // reward amount if both animal get juice for the altruistic task (self small juice, partner large juice)
-  bool doLargeSmallJuice{ false }; // true: do the two juice delievery with the variables as below; and false: only partner animal get juice with the variables set on the GUI
+  bool doLargeSmallJuice{ true }; // true: do the two juice delievery with the variables as below; and false: only partner animal get juice with the variables set on the GUI
   float large_juice_volume{ 0.150f };
   float small_juice_volume{ 0.020f };
   int juice1_delay_time{ 500 }; // from successful pulling to juice delivery (in unit of minisecond)
-  int juice2_delay_time{ 1500 }; // from successful pulling to juice delivery (in unit of minisecond)
+  int juice2_delay_time{ 1700 }; // from successful pulling to juice delivery (in unit of minisecond)
 
 
 
@@ -147,8 +150,10 @@ struct App : public om::App {
   // int switchTrialnum{ 3 + rand() % (10 - 3 + 1) }; //  Trial number is randomly set in [3, 10]
   int trialinBlock{ 0 };
 
-  bool allow_switch_role_basedon_time{ false };
+  bool allow_switch_role_basedon_time{ true };
   float switchTime{ 25.0f }; //time that is used to switch who get the juice, in the unit of second
+  float switchTime_lever1{ 15.0f }; //time that is used to switch who get the juice, in the unit of second
+  float switchTime_lever2{ 25.0f }; //time that is used to switch who get the juice, in the unit of second
   om::TimePoint BlockStartTime;
 
   int whogetjuice{ 0 }; // when task type is 2 or 3, both animnals have to pull, but only one get juice. this variable indicate which animal get the juice (this is the pump id; 0 or 1)
@@ -265,6 +270,9 @@ json to_json(const TrialRecord& trial) {
   result["pulltime_thres"] = trial.pulltime_thres;
   result["who_get_juice"] = trial.whogetjuice;
   result["automated_lever_enabled_index"] = trial.automated_lever_enabled_index;
+  result["switchTime"] = trial.switchTime;
+  result["switchTime_lever1"] = trial.switchTime_lever1;
+  result["switchTime_lever2"] = trial.switchTime_lever2;
   return result;
 }
 
@@ -640,6 +648,15 @@ void render_gui(App& app) {
     if (ImGui::InputFloat("switch roles time (s) setting:", switchTime_gui, 0.0f, 0.0f, "%0.1f", enter_flag)) {
       app.switchTime = switchTime_gui[0];
     };
+    float switchTime_lever1_gui[1]{ app.switchTime_lever1 };
+    if (ImGui::InputFloat("lever1 pull block time (s) setting:", switchTime_lever1_gui, 0.0f, 0.0f, "%0.1f", enter_flag)) {
+      app.switchTime_lever1 = switchTime_lever1_gui[0];
+    };
+    float switchTime_lever2_gui[1]{ app.switchTime_lever2 };
+    if (ImGui::InputFloat("lever2 pull block time (s) setting:", switchTime_lever2_gui, 0.0f, 0.0f, "%0.1f", enter_flag)) {
+      app.switchTime_lever2 = switchTime_lever2_gui[0];
+    };
+
 
     int whogetjuice_gui[1]{ app.whogetjuice };
     if (ImGui::InputInt("deliverable juice pump id", whogetjuice_gui, 0, 0, enter_flag)) {
@@ -878,18 +895,53 @@ void task_update(App& app) {
   // if use the absolute time to switch roles
   if (app.allow_switch_role_basedon_time) {
 
-    if (elapsed_time(app.BlockStartTime, now()) > app.switchTime) {
-      
-      // sound to indicate new block 
-      om::audio::play_buffer_both(app.start_trial_audio_buffer.value(), 0.25f);
+    if (0) { // if using the overall switchTime for both animals 
+      if (elapsed_time(app.BlockStartTime, now()) > app.switchTime) {
 
-      app.blocknumber = app.blocknumber + 1;
+        // sound to indicate new block 
+        om::audio::play_buffer_both(app.start_trial_audio_buffer.value(), 0.25f);
 
-      if (app.whogetjuice == 0) { app.whogetjuice = 1; }
-      else { app.whogetjuice = 0; }
+        app.blocknumber = app.blocknumber + 1;
 
-      app.BlockStartTime = now();
+        if (app.whogetjuice == 0) { app.whogetjuice = 1; }
+        else { app.whogetjuice = 0; }
+
+        app.BlockStartTime = now();
+      }
     }
+
+    if (1) { // if using the  switchTime for the two animals separately
+
+      if (app.whogetjuice == 0) { // animal1 get juice, animal2 pulls
+        if (elapsed_time(app.BlockStartTime, now()) > app.switchTime_lever2) {
+
+          // sound to indicate new block 
+          om::audio::play_buffer_both(app.start_trial_audio_buffer.value(), 0.25f);
+
+          app.blocknumber = app.blocknumber + 1;
+
+          if (app.whogetjuice == 0) { app.whogetjuice = 1; }
+          else { app.whogetjuice = 0; }
+
+          app.BlockStartTime = now();
+        }
+      }
+      else { // animal2 get juice, animal1 pulls
+        if (elapsed_time(app.BlockStartTime, now()) > app.switchTime_lever1) {
+
+          // sound to indicate new block 
+          om::audio::play_buffer_both(app.start_trial_audio_buffer.value(), 0.25f);
+
+          app.blocknumber = app.blocknumber + 1;
+
+          if (app.whogetjuice == 0) { app.whogetjuice = 1; }
+          else { app.whogetjuice = 0; }
+
+          app.BlockStartTime = now();
+        }
+      }
+    }
+
 
   }
 
@@ -1154,6 +1206,9 @@ void task_update(App& app) {
               trial_record.pulltime_thres = app.pulledtime_thres;
               trial_record.whogetjuice = app.whogetjuice;
               trial_record.trial_start_time_stamp = app.trial_start_time_forsave;
+              trial_record.switchTime = app.switchTime;
+              trial_record.switchTime_lever1 = app.switchTime_lever1;
+              trial_record.switchTime_lever2 = app.switchTime_lever2;
               //  Add to the array of trials.
               app.trial_records.push_back(trial_record);
               // 
@@ -1437,6 +1492,9 @@ void task_update(App& app) {
       trial_record.trial_start_time_stamp = app.trial_start_time_forsave;
       trial_record.pulltime_thres = app.pulledtime_thres;
       trial_record.whogetjuice = app.whogetjuice;
+      trial_record.switchTime = app.switchTime;
+      trial_record.switchTime_lever1 = app.switchTime_lever1;
+      trial_record.switchTime_lever2 = app.switchTime_lever2;
       //  Add to the array of trials.
       app.trial_records.push_back(trial_record);
       state = 0;
@@ -1462,6 +1520,9 @@ void ensure_some_trial_records_are_stored(App& app) {
     trial_record.trial_start_time_stamp = app.trial_start_time_forsave;
     trial_record.pulltime_thres = app.pulledtime_thres;
     trial_record.whogetjuice = app.whogetjuice;
+    trial_record.switchTime = app.switchTime;
+    trial_record.switchTime_lever1 = app.switchTime_lever1;
+    trial_record.switchTime_lever2 = app.switchTime_lever2;
     //  Add to the array of trials.
     app.trial_records.push_back(trial_record);
   }
